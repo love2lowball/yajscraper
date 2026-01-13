@@ -55,6 +55,59 @@ SECONDARY_KEYWORDS = [
     "クレンツェ",         # Kranze
 ]
 
+# Exclude keywords - skip listings containing these terms
+EXCLUDE_KEYWORDS = [
+    # Junk/damaged
+    "ジャンク",           # junk/for parts
+    "傷あり",             # scratched
+    "キズあり",           # scratched (alt spelling)
+    "曲がり",             # bent
+    "割れ",               # cracked
+    "欠品",               # missing parts
+    "難あり",             # has issues
+
+    # Not actual wheels
+    "レプリカ",           # replica
+    "ミニカー",           # model cars
+    "1/18",               # scale model
+    "1/43",               # scale model
+    "1/64",               # scale model
+    "カタログ",           # catalog
+    "ステッカー",         # stickers
+    "ポスター",           # poster
+    "キーホルダー",       # keychain
+
+    # Parts only (not full wheels)
+    "ホイールキャップ",   # hubcaps
+    "センターキャップ",   # center caps only
+    "ナットのみ",         # lug nuts only
+    "バルブ",             # valve stems
+    "スペーサー",         # spacers only
+
+    # Tires we don't want
+    "スタッドレス",       # studless/winter tires
+    "タイヤのみ",         # tires only (no wheels)
+
+    # Other noise
+    "軽自動車",           # kei car (too small usually)
+    "12インチ",           # 12 inch (too small)
+    "13インチ",           # 13 inch (usually too small)
+]
+
+# Price filters (yen)
+MIN_PRICE = 5000        # Skip below this (likely junk or parts)
+MAX_PRICE = 2000000     # Skip above this (out of range)
+
+# Require keywords - if set, listing must contain at least one of these
+# Leave empty to disable
+REQUIRE_KEYWORDS = [
+    # Uncomment to only get specific sizes:
+    # "14インチ",
+    # "15インチ",
+    # "16インチ",
+    # "17インチ",
+]
+
 # User agents for rotation
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

@@ -24,6 +24,7 @@ from src.scraper import YahooAuctionsScraper
 from src.parser import YahooAuctionsParser
 from src.database import ListingsDatabase
 from src.notifier import DiscordNotifier
+from src.filters import filter_listings, get_filter_stats
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
@@ -192,6 +193,11 @@ def run_scraper(
         logger.warning(f"Failed searches: {len(failed_searches)}")
         for kw, cat in failed_searches:
             logger.warning(f"  - {kw} in {cat}")
+
+    # Apply filters
+    pre_filter_count = len(all_listings)
+    all_listings = filter_listings(all_listings)
+    logger.info(f"After filtering: {len(all_listings)} listings ({pre_filter_count - len(all_listings)} filtered out)")
 
     # Deduplicate and store
     with ListingsDatabase() as db:
