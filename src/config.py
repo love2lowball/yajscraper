@@ -42,6 +42,16 @@ PRIMARY_KEYWORDS = [
     "深リム ホイール",     # deep dish wheels
     "鍛造 3ピース",        # forged 3-piece
     "バレル研磨 ホイール", # barrel polished wheels
+    "carving ホイール",    # carving wheels
+    "カービング",          # carving (Japanese)
+    "ギャルソン",          # Garson
+    "bridgestone ホイール", # Bridgestone wheels
+    "BIM ホイール",        # Bridgestone BIM studio
+    "リバレル",            # re-barrel
+    "トラフィックスター",  # Traffic Star
+    "vienna ホイール",     # Vienna wheels
+    "ヴィエナ",            # Vienna (Japanese)
+    "ABC ホイール",        # ABC Exclusive
 ]
 
 # Secondary keywords (brand-specific, for later)
