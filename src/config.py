@@ -26,8 +26,8 @@ LISTING_BASE_URL = "https://page.auctions.yahoo.co.jp/jp/auction"
 
 # Categories
 CATEGORIES = {
-    "tire_wheel_sets": "2084199064",  # タイヤ・ホイールセット
-    "wheels_only": "26318",            # ホイール単体
+    "tire_wheel_sets": "2084200183",  # タイヤ・ホイールセット
+    "wheels_only": "2084005140",       # ホイール
 }
 
 # Primary search keywords (Japanese)
