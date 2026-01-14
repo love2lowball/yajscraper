@@ -31,27 +31,28 @@ CATEGORIES = {
 }
 
 # Primary search keywords (Japanese)
+# Note: "ホイール" omitted since we search within wheel categories
 PRIMARY_KEYWORDS = [
-    "希少 ホイール",       # rare wheels
-    "当時もの ホイール",   # period-correct wheels
-    "メッキ ホイール",     # chrome wheels
-    "絶版 ホイール",       # discontinued wheels
-    "3ピース ホイール",    # 3-piece wheels
-    "３本スポーク ホイール", # 3-spoke wheels
-    "旧車 ホイール",       # classic car wheels
-    "深リム ホイール",     # deep dish wheels
-    "鍛造 3ピース",        # forged 3-piece
-    "バレル研磨 ホイール", # barrel polished wheels
-    "carving ホイール",    # carving wheels
+    "希少",                # rare
+    "当時もの",            # period-correct
+    "メッキ",              # chrome
+    "絶版",                # discontinued
+    "3ピース",             # 3-piece
+    "３本スポーク",        # 3-spoke
+    "旧車",                # classic car
+    "深リム",              # deep dish
+    "鍛造",                # forged
+    "バレル研磨",          # barrel polished
+    "carving",             # carving
     "カービング",          # carving (Japanese)
     "ギャルソン",          # Garson
-    "bridgestone ホイール", # Bridgestone wheels
-    "BIM ホイール",        # Bridgestone BIM studio
+    "bridgestone",         # Bridgestone
+    "BIM",                 # Bridgestone BIM studio
     "リバレル",            # re-barrel
     "トラフィックスター",  # Traffic Star
-    "vienna ホイール",     # Vienna wheels
+    "vienna",              # Vienna
     "ヴィエナ",            # Vienna (Japanese)
-    "ABC ホイール",        # ABC Exclusive
+    "ABC",                 # ABC Exclusive
 ]
 
 # Secondary keywords (brand-specific, for later)
