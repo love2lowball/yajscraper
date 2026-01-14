@@ -211,14 +211,14 @@ def run_scraper(
         if new_listings:
             success = notifier.send_listings(new_listings, stats, dry_run=dry_run)
 
-            if success:
-                # Mark as notified
+            if success and not dry_run:
+                # Mark as notified (only if actually sent)
                 auction_ids = [
                     l.auction_id if hasattr(l, 'auction_id') else l['auction_id']
                     for l in new_listings
                 ]
                 db.mark_as_notified(auction_ids)
-            else:
+            elif not success:
                 logger.error("Failed to send some notifications")
                 return 1
 
