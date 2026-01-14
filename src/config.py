@@ -57,15 +57,6 @@ SECONDARY_KEYWORDS = [
 
 # Exclude keywords - skip listings containing these terms
 EXCLUDE_KEYWORDS = [
-    # Junk/damaged
-    "ジャンク",           # junk/for parts
-    "傷あり",             # scratched
-    "キズあり",           # scratched (alt spelling)
-    "曲がり",             # bent
-    "割れ",               # cracked
-    "欠品",               # missing parts
-    "難あり",             # has issues
-
     # Not actual wheels
     "レプリカ",           # replica
     "ミニカー",           # model cars
