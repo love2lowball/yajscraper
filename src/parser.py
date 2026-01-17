@@ -2,48 +2,25 @@
 
 import re
 import logging
+import traceback
 from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
 from typing import Optional
 from bs4 import BeautifulSoup
+
+from .base import BaseParser, Listing
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class Listing:
-    """Represents a single auction listing."""
-    auction_id: str
-    title: str
-    current_price: int
-    buyout_price: Optional[int]
-    bids: int
-    time_remaining: str
-    end_time: Optional[datetime]
-    seller_id: str
-    seller_rating: str
-    thumbnail_url: str
-    listing_url: str
-    search_keyword: str
-    scraped_at: datetime
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary for database storage."""
-        data = asdict(self)
-        # Convert datetime objects to ISO strings
-        if data["end_time"]:
-            data["end_time"] = data["end_time"].isoformat()
-        data["scraped_at"] = data["scraped_at"].isoformat()
-        return data
-
-
-class YahooAuctionsParser:
+class YahooAuctionsParser(BaseParser):
     """Parses Yahoo Auctions Japan search result pages."""
+
+    PLATFORM_NAME = "yahoo_auctions"
 
     def __init__(self):
         self.listing_url_base = "https://page.auctions.yahoo.co.jp/jp/auction"
 
-    def parse_search_results(self, html: str, search_keyword: str) -> list[Listing]:
+    def parse_search_results(self, html: str, search_keyword: str = "") -> list[Listing]:
         """
         Parse search results page and extract all listings.
 
@@ -73,15 +50,21 @@ class YahooAuctionsParser:
 
         logger.info(f"Found {len(product_containers)} product containers")
 
-        for container in product_containers:
+        for i, container in enumerate(product_containers):
             try:
                 listing = self._parse_single_listing(container, search_keyword, scraped_at)
                 if listing:
                     listings.append(listing)
             except Exception as e:
-                logger.warning(f"Failed to parse listing: {e}")
+                # Log full details for debugging when Yahoo changes their HTML
+                logger.warning(
+                    f"Failed to parse listing {i+1}/{len(product_containers)}: {e}\n"
+                    f"Traceback: {traceback.format_exc()}\n"
+                    f"Container HTML (first 500 chars): {str(container)[:500]}"
+                )
                 continue
 
+        logger.info(f"Successfully parsed {len(listings)} listings from {len(product_containers)} containers")
         return listings
 
     def _find_product_containers_fallback(self, soup: BeautifulSoup) -> list:
@@ -110,11 +93,13 @@ class YahooAuctionsParser:
         # Extract auction ID
         auction_id = self._extract_auction_id(container)
         if not auction_id:
+            logger.debug("Skipping container: no auction ID found")
             return None
 
         # Extract title
         title = self._extract_title(container)
         if not title:
+            logger.debug(f"Skipping auction {auction_id}: no title found")
             return None
 
         # Extract prices
@@ -139,9 +124,11 @@ class YahooAuctionsParser:
         listing_url = f"{self.listing_url_base}/{auction_id}"
 
         return Listing(
-            auction_id=auction_id,
+            listing_id=auction_id,
+            platform=self.PLATFORM_NAME,
             title=title,
             current_price=current_price,
+            currency="JPY",
             buyout_price=buyout_price,
             bids=bids,
             time_remaining=time_remaining,

@@ -1,0 +1,21 @@
+[Unit]
+Description=Wheel Scraper Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/yajscraper
+ExecStart=/home/ubuntu/yajscraper/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+# Logging
+StandardOutput=append:/home/ubuntu/yajscraper/logs/bot.log
+StandardError=append:/home/ubuntu/yajscraper/logs/bot.log
+
+[Install]
+WantedBy=multi-user.target

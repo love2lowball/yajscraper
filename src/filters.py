@@ -3,10 +3,36 @@
 import logging
 from typing import Union
 
-from .parser import Listing
+from .base import Listing
 from . import config
 
 logger = logging.getLogger(__name__)
+
+# US platforms use different filters
+US_PLATFORMS = {"craigslist"}
+
+
+def _get_filter_config(platform: str) -> tuple[list, int, int, list]:
+    """
+    Get filter configuration based on platform.
+
+    Returns:
+        Tuple of (exclude_keywords, min_price, max_price, require_keywords)
+    """
+    if platform in US_PLATFORMS:
+        return (
+            getattr(config, 'US_EXCLUDE_KEYWORDS', []),
+            getattr(config, 'US_MIN_PRICE', 150),
+            getattr(config, 'US_MAX_PRICE', 1200),
+            [],  # No require keywords for US
+        )
+    else:
+        return (
+            config.EXCLUDE_KEYWORDS,
+            config.MIN_PRICE,
+            config.MAX_PRICE,
+            config.REQUIRE_KEYWORDS,
+        )
 
 
 def filter_listing(listing: Union[Listing, dict]) -> bool:
@@ -19,35 +45,40 @@ def filter_listing(listing: Union[Listing, dict]) -> bool:
     Returns:
         True if listing should be kept, False if filtered out
     """
-    # Get title and price
+    # Get title, price, and platform
     if isinstance(listing, dict):
         title = listing.get("title", "")
         price = listing.get("current_price", 0)
+        platform = listing.get("platform", "")
     else:
         title = listing.title
         price = listing.current_price
+        platform = getattr(listing, 'platform', '')
 
     title_lower = title.lower()
 
+    # Get platform-specific filter config
+    exclude_keywords, min_price, max_price, require_keywords = _get_filter_config(platform)
+
     # Check exclude keywords
-    for exclude in config.EXCLUDE_KEYWORDS:
+    for exclude in exclude_keywords:
         if exclude.lower() in title_lower or exclude in title:
             logger.debug(f"Filtered out (exclude '{exclude}'): {title[:50]}...")
             return False
 
     # Check price range
-    if price < config.MIN_PRICE:
-        logger.debug(f"Filtered out (price {price} < {config.MIN_PRICE}): {title[:50]}...")
+    if price < min_price:
+        logger.debug(f"Filtered out (price {price} < {min_price}): {title[:50]}...")
         return False
 
-    if price > config.MAX_PRICE:
-        logger.debug(f"Filtered out (price {price} > {config.MAX_PRICE}): {title[:50]}...")
+    if price > max_price:
+        logger.debug(f"Filtered out (price {price} > {max_price}): {title[:50]}...")
         return False
 
     # Check require keywords (if any are set)
-    if config.REQUIRE_KEYWORDS:
+    if require_keywords:
         found = False
-        for require in config.REQUIRE_KEYWORDS:
+        for require in require_keywords:
             if require.lower() in title_lower or require in title:
                 found = True
                 break
@@ -102,31 +133,36 @@ def get_filter_stats(listings: list[Union[Listing, dict]]) -> dict:
         if isinstance(listing, dict):
             title = listing.get("title", "")
             price = listing.get("current_price", 0)
+            platform = listing.get("platform", "")
         else:
             title = listing.title
             price = listing.current_price
+            platform = getattr(listing, 'platform', '')
 
         title_lower = title.lower()
         filtered = False
 
+        # Get platform-specific filter config
+        exclude_keywords, min_price, max_price, require_keywords = _get_filter_config(platform)
+
         # Check excludes
-        for exclude in config.EXCLUDE_KEYWORDS:
+        for exclude in exclude_keywords:
             if exclude.lower() in title_lower or exclude in title:
                 stats["excluded_keyword"] += 1
                 stats["exclude_reasons"][exclude] = stats["exclude_reasons"].get(exclude, 0) + 1
                 filtered = True
                 break
 
-        if not filtered and price < config.MIN_PRICE:
+        if not filtered and price < min_price:
             stats["price_too_low"] += 1
             filtered = True
 
-        if not filtered and price > config.MAX_PRICE:
+        if not filtered and price > max_price:
             stats["price_too_high"] += 1
             filtered = True
 
-        if not filtered and config.REQUIRE_KEYWORDS:
-            found = any(r.lower() in title_lower or r in title for r in config.REQUIRE_KEYWORDS)
+        if not filtered and require_keywords:
+            found = any(r.lower() in title_lower or r in title for r in require_keywords)
             if not found:
                 stats["missing_required"] += 1
                 filtered = True

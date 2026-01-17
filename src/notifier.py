@@ -7,7 +7,7 @@ from typing import Optional
 
 import requests
 
-from .parser import Listing
+from .base import Listing
 from . import config
 
 logger = logging.getLogger(__name__)
@@ -44,8 +44,10 @@ class DiscordNotifier:
             logger.error(f"Failed to send Discord webhook: {e}")
             return False
 
-    def _format_price(self, price: int) -> str:
-        """Format price with thousands separator."""
+    def _format_price(self, price: int, currency: str = "JPY") -> str:
+        """Format price with thousands separator and currency symbol."""
+        if currency == "USD":
+            return f"${price:,}"
         return f"¥{price:,}"
 
     def _create_listing_embed(self, listing: Listing | dict) -> dict:
@@ -55,37 +57,51 @@ class DiscordNotifier:
             title = listing.get("title", "")
             current_price = listing.get("current_price", 0)
             buyout_price = listing.get("buyout_price")
+            currency = listing.get("currency", "JPY")
             time_remaining = listing.get("time_remaining", "")
             seller_id = listing.get("seller_id", "")
             seller_rating = listing.get("seller_rating", "")
             listing_url = listing.get("listing_url", "")
             thumbnail_url = listing.get("thumbnail_url", "")
+            platform = listing.get("platform", "yahoo_auctions")
         else:
             title = listing.title
             current_price = listing.current_price
             buyout_price = listing.buyout_price
-            time_remaining = listing.time_remaining
+            currency = getattr(listing, 'currency', 'JPY')
+            time_remaining = getattr(listing, 'time_remaining', '')
             seller_id = listing.seller_id
             seller_rating = listing.seller_rating
             listing_url = listing.listing_url
             thumbnail_url = listing.thumbnail_url
+            platform = getattr(listing, 'platform', 'yahoo_auctions')
 
         # Build price line
-        price_str = self._format_price(current_price)
+        price_str = self._format_price(current_price, currency)
         if buyout_price:
-            price_str += f" (即決: {self._format_price(buyout_price)})"
+            price_str += f" (即決: {self._format_price(buyout_price, currency)})"
 
         # Build seller line
         seller_str = seller_id if seller_id else "Unknown"
         if seller_rating:
             seller_str += f" (評価: {seller_rating})"
 
+        # Platform-specific formatting
+        platform_info = {
+            "yahoo_auctions": {"emoji": "🔴", "name": "Yahoo", "color": 0xE63946},
+            "mercari": {"emoji": "🔵", "name": "Mercari", "color": 0x4A90D9},
+            "jmty": {"emoji": "🟢", "name": "JMTY", "color": 0x2ECC71},
+            "craigslist": {"emoji": "🟣", "name": "Craigslist", "color": 0x9B59B6},
+        }
+        pinfo = platform_info.get(platform, platform_info["yahoo_auctions"])
+
         # Build description
         description_lines = [
+            f"{pinfo['emoji']} **{pinfo['name']}**",
             f"💰 {price_str}",
             f"⏰ 残り {time_remaining}" if time_remaining else "",
             f"👤 {seller_str}",
-            f"🔗 [View Auction]({listing_url})",
+            f"🔗 [View Listing]({listing_url})",
         ]
         description = "\n".join(line for line in description_lines if line)
 
@@ -93,7 +109,7 @@ class DiscordNotifier:
             "title": title[:256],  # Discord title limit
             "description": description,
             "url": listing_url,
-            "color": 0xE63946,  # Red color for visibility
+            "color": pinfo["color"],
         }
 
         # Add thumbnail if available

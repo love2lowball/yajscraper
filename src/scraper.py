@@ -1,36 +1,37 @@
 """HTTP request handling for Yahoo Auctions Japan scraper."""
 
-import random
-import time
 import logging
-from urllib.parse import urlencode
 from typing import Optional
+from urllib.parse import urlencode
 
-import requests
-
+from .base import BaseScraper
 from . import config
 
 logger = logging.getLogger(__name__)
 
 
-class YahooAuctionsScraper:
+class YahooAuctionsScraper(BaseScraper):
     """Handles HTTP requests to Yahoo Auctions Japan."""
 
+    PLATFORM_NAME = "yahoo_auctions"
+    BASE_URL = "https://auctions.yahoo.co.jp"
+    RESULTS_PER_PAGE = 100
+
     def __init__(self, proxy_url: Optional[str] = None):
-        self.session = requests.Session()
-        self.proxy_url = proxy_url or config.PROXY_URL
+        super().__init__(
+            proxy_url=proxy_url or config.PROXY_URL,
+            request_timeout=config.REQUEST_TIMEOUT,
+            min_delay=config.MIN_DELAY,
+            max_delay=config.MAX_DELAY,
+            max_retries=config.MAX_RETRIES,
+            backoff_factor=config.BACKOFF_FACTOR,
+        )
 
-        if self.proxy_url:
-            self.session.proxies = {
-                "http": self.proxy_url,
-                "https": self.proxy_url,
-            }
+    def get_user_agents(self) -> list[str]:
+        """Return list of user agent strings."""
+        return config.USER_AGENTS
 
-    def _get_random_user_agent(self) -> str:
-        """Return a random user agent string."""
-        return random.choice(config.USER_AGENTS)
-
-    def _get_headers(self) -> dict:
+    def get_headers(self) -> dict:
         """Build request headers."""
         return {
             "User-Agent": self._get_random_user_agent(),
@@ -41,57 +42,29 @@ class YahooAuctionsScraper:
             "Upgrade-Insecure-Requests": "1",
         }
 
-    def _random_delay(self) -> None:
-        """Sleep for a random duration between requests."""
-        delay = random.uniform(config.MIN_DELAY, config.MAX_DELAY)
-        logger.debug(f"Sleeping for {delay:.2f} seconds")
-        time.sleep(delay)
-
-    def _request_with_retry(self, url: str) -> Optional[requests.Response]:
-        """Make a GET request with retry logic and exponential backoff."""
-        for attempt in range(config.MAX_RETRIES):
-            try:
-                response = self.session.get(
-                    url,
-                    headers=self._get_headers(),
-                    timeout=config.REQUEST_TIMEOUT,
-                )
-
-                # Handle rate limiting
-                if response.status_code == 429:
-                    wait_time = config.BACKOFF_FACTOR ** (attempt + 1)
-                    logger.warning(f"Rate limited (429). Waiting {wait_time}s before retry.")
-                    time.sleep(wait_time)
-                    continue
-
-                response.raise_for_status()
-                return response
-
-            except requests.exceptions.RequestException as e:
-                wait_time = config.BACKOFF_FACTOR ** attempt
-                logger.warning(f"Request failed (attempt {attempt + 1}/{config.MAX_RETRIES}): {e}")
-
-                if attempt < config.MAX_RETRIES - 1:
-                    logger.info(f"Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"All {config.MAX_RETRIES} attempts failed for URL: {url}")
-                    return None
-
-        return None
-
-    def build_search_url(self, keyword: str, category: str, sort: str = "new") -> str:
+    def build_search_url(
+        self,
+        keyword: str,
+        category: str = "",
+        page: int = 1,
+        sort: str = "new",
+        **kwargs
+    ) -> str:
         """
         Build a Yahoo Auctions search URL.
 
         Args:
             keyword: Search term (Japanese)
             category: Category ID (e.g., "2084199064")
+            page: Page number (1-indexed)
             sort: Sort order - "new" for newest first
 
         Returns:
             Full search URL
         """
+        if not category:
+            category = config.CATEGORIES["wheels_only"]
+
         # Sort options: new = newest, cbids = bids, cprice = price
         sort_map = {
             "new": "new",
@@ -99,26 +72,32 @@ class YahooAuctionsScraper:
             "price": "cprice",
         }
 
+        # Calculate offset from page number
+        # Yahoo uses 'b' parameter as 1-indexed offset
+        # Page 1: b=1, Page 2: b=101, Page 3: b=201, etc.
+        offset = ((page - 1) * self.RESULTS_PER_PAGE) + 1
+
         params = {
             "p": keyword,
             "auccat": category,
             "va": keyword,
             "exflg": "1",  # Exclude ended auctions
-            "b": "1",      # Start from first result
-            "n": "100",    # Results per page
+            "b": str(offset),
+            "n": str(self.RESULTS_PER_PAGE),
             "s1": sort_map.get(sort, "new"),
-            "o1": "d",     # Descending (newest first)
+            "o1": "d",  # Descending (newest first)
         }
 
         return f"{config.SEARCH_BASE_URL}?{urlencode(params)}"
 
-    def search(self, keyword: str, category: str = None) -> Optional[str]:
+    def search(self, keyword: str, category: str = None, page: int = 1) -> Optional[str]:
         """
         Execute a search and return the HTML response.
 
         Args:
             keyword: Search term
             category: Category ID (defaults to wheels_only)
+            page: Page number (1-indexed)
 
         Returns:
             HTML content of search results page, or None on failure
@@ -126,11 +105,11 @@ class YahooAuctionsScraper:
         if category is None:
             category = config.CATEGORIES["wheels_only"]
 
-        url = self.build_search_url(keyword, category)
-        logger.info(f"Searching: '{keyword}' in category {category}")
+        url = self.build_search_url(keyword, category, page=page)
+        logger.info(f"Searching: '{keyword}' in category {category} (page {page})")
         logger.debug(f"URL: {url}")
 
-        response = self._request_with_retry(url)
+        response = self.request_with_retry(url)
 
         if response is None:
             return None
@@ -139,20 +118,85 @@ class YahooAuctionsScraper:
         response.encoding = "utf-8"
         return response.text
 
+    def search_with_pagination(
+        self,
+        keyword: str,
+        category: str = None,
+        max_pages: int = 10,
+        parser=None,
+    ) -> list[str]:
+        """
+        Search through all pages of results for a keyword.
+
+        Args:
+            keyword: Search term
+            category: Category ID
+            max_pages: Maximum pages to fetch (safety limit)
+            parser: Optional parser instance to get result count
+
+        Returns:
+            List of HTML contents from all pages
+        """
+        if category is None:
+            category = config.CATEGORIES["wheels_only"]
+
+        def get_total_results(html: str) -> int:
+            if parser:
+                return parser.get_result_count(html)
+            return 0
+
+        results = []
+        page = 1
+        total_results = None
+        calculated_max_pages = max_pages
+
+        while page <= calculated_max_pages:
+            logger.info(f"Fetching page {page}/{calculated_max_pages} for '{keyword}'")
+
+            html = self.search(keyword, category, page=page)
+            if not html:
+                logger.warning(f"No response for page {page}, stopping pagination")
+                break
+
+            results.append(html)
+
+            # On first page, determine total results and calculate pages needed
+            if page == 1 and parser:
+                total_results = get_total_results(html)
+                if total_results:
+                    total_pages = (total_results + self.RESULTS_PER_PAGE - 1) // self.RESULTS_PER_PAGE
+                    calculated_max_pages = min(max_pages, total_pages)
+                    logger.info(f"Total results: {total_results}, will fetch {calculated_max_pages} pages")
+
+            if page >= calculated_max_pages:
+                break
+
+            page += 1
+            self.random_delay()
+
+        logger.info(f"Fetched {len(results)} pages for '{keyword}'")
+        return results
+
     def search_all_keywords(
         self,
         keywords: list[str] = None,
-        categories: list[str] = None
-    ) -> dict[str, str]:
+        categories: list[str] = None,
+        paginate: bool = True,
+        max_pages_per_search: int = 10,
+        parser=None,
+    ) -> dict[tuple[str, str], list[str]]:
         """
-        Search for all keywords across all categories.
+        Search for all keywords across all categories with pagination.
 
         Args:
             keywords: List of search terms (defaults to PRIMARY_KEYWORDS)
             categories: List of category IDs (defaults to all)
+            paginate: Whether to fetch all pages (True) or just first page (False)
+            max_pages_per_search: Maximum pages per keyword/category combo
+            parser: Parser instance for getting result counts
 
         Returns:
-            Dict mapping (keyword, category) to HTML content
+            Dict mapping (keyword, category) to list of HTML contents
         """
         if keywords is None:
             keywords = config.PRIMARY_KEYWORDS
@@ -167,15 +211,25 @@ class YahooAuctionsScraper:
         for keyword in keywords:
             for category in categories:
                 current += 1
-                logger.info(f"Progress: {current}/{total_searches}")
+                logger.info(f"Progress: {current}/{total_searches} - '{keyword}' in {category}")
 
-                html = self.search(keyword, category)
-                if html:
-                    results[(keyword, category)] = html
+                if paginate:
+                    pages = self.search_with_pagination(
+                        keyword,
+                        category,
+                        max_pages=max_pages_per_search,
+                        parser=parser,
+                    )
+                    if pages:
+                        results[(keyword, category)] = pages
+                else:
+                    html = self.search(keyword, category)
+                    if html:
+                        results[(keyword, category)] = [html]
 
-                # Delay between requests (except for last one)
+                # Delay between different keyword searches (not between pages)
                 if current < total_searches:
-                    self._random_delay()
+                    self.random_delay()
 
         return results
 
@@ -187,33 +241,32 @@ def test_basic_search():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
-    scraper = YahooAuctionsScraper()
+    with YahooAuctionsScraper() as scraper:
+        # Test with a single keyword
+        keyword = "希少 ホイール"
+        print(f"\n{'='*60}")
+        print(f"Testing search for: {keyword}")
+        print(f"{'='*60}\n")
 
-    # Test with a single keyword
-    keyword = "希少 ホイール"
-    print(f"\n{'='*60}")
-    print(f"Testing search for: {keyword}")
-    print(f"{'='*60}\n")
+        html = scraper.search(keyword)
 
-    html = scraper.search(keyword)
+        if html:
+            print(f"SUCCESS: Received {len(html):,} bytes of HTML")
+            print(f"\nFirst 500 characters:")
+            print("-" * 40)
+            print(html[:500])
+            print("-" * 40)
 
-    if html:
-        print(f"SUCCESS: Received {len(html):,} bytes of HTML")
-        print(f"\nFirst 500 characters:")
-        print("-" * 40)
-        print(html[:500])
-        print("-" * 40)
+            # Quick check for expected content
+            if "Product" in html or "件" in html or "auction" in html.lower():
+                print("\n✓ Response appears to contain auction data")
+            else:
+                print("\n⚠ Response may not contain expected auction data")
 
-        # Quick check for expected content
-        if "Product" in html or "件" in html or "auction" in html.lower():
-            print("\n✓ Response appears to contain auction data")
+            return html
         else:
-            print("\n⚠ Response may not contain expected auction data")
-
-        return html
-    else:
-        print("FAILED: No response received")
-        return None
+            print("FAILED: No response received")
+            return None
 
 
 if __name__ == "__main__":

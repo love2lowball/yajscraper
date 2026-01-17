@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .parser import Listing
+from .base import Listing
 from . import config
 
 logger = logging.getLogger(__name__)
@@ -35,6 +35,7 @@ class ListingsDatabase:
             CREATE TABLE IF NOT EXISTS listings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 auction_id TEXT UNIQUE NOT NULL,
+                platform TEXT DEFAULT 'yahoo_auctions',
                 title TEXT NOT NULL,
                 current_price INTEGER,
                 buyout_price INTEGER,
@@ -51,6 +52,13 @@ class ListingsDatabase:
                 notified BOOLEAN DEFAULT FALSE
             )
         """)
+
+        # Migration: Add platform column if it doesn't exist (for existing databases)
+        cursor.execute("PRAGMA table_info(listings)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'platform' not in columns:
+            cursor.execute("ALTER TABLE listings ADD COLUMN platform TEXT DEFAULT 'yahoo_auctions'")
+            logger.info("Migrated database: added 'platform' column")
 
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_auction_id ON listings(auction_id)
@@ -97,21 +105,26 @@ class ListingsDatabase:
         """
         cursor = self.connection.cursor()
 
+        # Map listing_id to auction_id for backwards compatibility
+        auction_id = listing.listing_id if hasattr(listing, 'listing_id') else listing.auction_id
+        platform = getattr(listing, 'platform', 'yahoo_auctions')
+
         try:
             cursor.execute("""
                 INSERT INTO listings (
-                    auction_id, title, current_price, buyout_price, bids,
+                    auction_id, platform, title, current_price, buyout_price, bids,
                     time_remaining, end_time, seller_id, seller_rating,
                     thumbnail_url, listing_url, search_keyword,
                     first_seen_at, last_seen_at, notified
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                listing.auction_id,
+                auction_id,
+                platform,
                 listing.title,
                 listing.current_price,
                 listing.buyout_price,
                 listing.bids,
-                listing.time_remaining,
+                getattr(listing, 'time_remaining', ''),
                 listing.end_time.isoformat() if listing.end_time else None,
                 listing.seller_id,
                 listing.seller_rating,
@@ -123,7 +136,7 @@ class ListingsDatabase:
                 False,
             ))
             self.connection.commit()
-            logger.debug(f"Inserted new listing: {listing.auction_id}")
+            logger.debug(f"Inserted new listing: {auction_id}")
             return True
 
         except sqlite3.IntegrityError:
@@ -133,6 +146,7 @@ class ListingsDatabase:
 
     def _update_last_seen(self, listing: Listing) -> None:
         """Update last_seen_at and price for existing listing."""
+        auction_id = listing.listing_id if hasattr(listing, 'listing_id') else listing.auction_id
         cursor = self.connection.cursor()
         cursor.execute("""
             UPDATE listings
@@ -146,7 +160,7 @@ class ListingsDatabase:
             listing.current_price,
             listing.bids,
             listing.time_remaining,
-            listing.auction_id,
+            auction_id,
         ))
         self.connection.commit()
 

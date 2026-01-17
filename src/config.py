@@ -24,11 +24,33 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 SEARCH_BASE_URL = "https://auctions.yahoo.co.jp/search/search"
 LISTING_BASE_URL = "https://page.auctions.yahoo.co.jp/jp/auction"
 
-# Categories
+# Yahoo Auctions Categories
 CATEGORIES = {
     "tire_wheel_sets": "2084200183",  # タイヤ・ホイールセット
     "wheels_only": "2084005140",       # ホイール
 }
+
+# Mercari Japan Categories
+MERCARI_CATEGORIES = {
+    "wheels_only": 1112,
+    "tire_wheel_sets": 1109,
+}
+
+# Mercari-specific settings (more conservative delays)
+MERCARI_MIN_DELAY = 3.0
+MERCARI_MAX_DELAY = 7.0
+MERCARI_MAX_PAGES = 5  # Mercari returns more per page, so fewer pages needed
+
+# JMTY Categories
+JMTY_CATEGORIES = {
+    "tire_wheel": "g-2429",  # タイヤ、ホイール
+}
+
+# JMTY-specific settings (most conservative due to bot protection)
+JMTY_MIN_DELAY = 5.0
+JMTY_MAX_DELAY = 10.0
+JMTY_MAX_PAGES = 5
+JMTY_REGION = "all"  # "all" for nationwide, or specific prefecture like "tokyo"
 
 # Primary search keywords (Japanese)
 # Note: "ホイール" omitted since we search within wheel categories
@@ -125,3 +147,60 @@ MIN_DELAY = 2  # seconds between requests
 MAX_DELAY = 5  # seconds between requests
 MAX_RETRIES = 3
 BACKOFF_FACTOR = 2  # exponential backoff multiplier
+
+# ============================================================
+# US Market Settings (Craigslist)
+# ============================================================
+
+# Craigslist Categories
+CRAIGSLIST_CATEGORIES = {
+    "wheels_tires": "wta",   # wheels+tires section
+    "auto_parts": "pta",     # auto parts section
+}
+
+# Craigslist-specific settings (conservative due to bot protection)
+CRAIGSLIST_MIN_DELAY = 5.0
+CRAIGSLIST_MAX_DELAY = 10.0
+CRAIGSLIST_MAX_PAGES = 2  # Pages per city (120 results per page)
+
+# US Price filters (USD)
+US_MIN_PRICE = 150
+US_MAX_PRICE = 1200
+
+# US Search keywords (placeholder - user will provide)
+US_PRIMARY_KEYWORDS = [
+    "billet",  # placeholder
+]
+
+# US Exclude keywords - skip listings containing these terms
+US_EXCLUDE_KEYWORDS = [
+    # Replicas and fakes
+    "replica",
+    "reps",
+    "rep ",
+    "fake",
+    "knockoff",
+
+    # Not actual wheels
+    "hubcaps",
+    "hub caps",
+    "center caps only",
+    "center cap",
+    "lug nuts",
+    "spacers",
+
+    # Condition we don't want
+    "new",
+    "brand new",
+    "winter tires",
+    "snow tires",
+    "studded",
+
+    # Too small or irrelevant
+    "12 inch",
+    "13 inch",
+    "golf cart",
+    "atv",
+    "trailer",
+    "lawn mower",
+]
