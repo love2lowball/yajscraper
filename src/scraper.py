@@ -124,6 +124,8 @@ class YahooAuctionsScraper(BaseScraper):
         category: str = None,
         max_pages: int = 10,
         parser=None,
+        db=None,
+        duplicate_threshold: float = 1.0,
     ) -> list[str]:
         """
         Search through all pages of results for a keyword.
@@ -133,6 +135,8 @@ class YahooAuctionsScraper(BaseScraper):
             category: Category ID
             max_pages: Maximum pages to fetch (safety limit)
             parser: Optional parser instance to get result count
+            db: Optional database instance for duplicate-based early termination
+            duplicate_threshold: Stop when 100% of page is duplicates (default 1.0)
 
         Returns:
             List of HTML contents from all pages
@@ -161,12 +165,28 @@ class YahooAuctionsScraper(BaseScraper):
             results.append(html)
 
             # On first page, determine total results and calculate pages needed
+            # But don't reduce max_pages if the count seems wrong (less than what we got)
             if page == 1 and parser:
                 total_results = get_total_results(html)
-                if total_results:
+                if total_results and total_results >= self.RESULTS_PER_PAGE:
                     total_pages = (total_results + self.RESULTS_PER_PAGE - 1) // self.RESULTS_PER_PAGE
                     calculated_max_pages = min(max_pages, total_pages)
                     logger.info(f"Total results: {total_results}, will fetch {calculated_max_pages} pages")
+                else:
+                    logger.info(f"Result count unclear ({total_results}), using max_pages={max_pages}")
+
+            # Check for duplicates to enable early termination
+            if db and parser and html:
+                listings = parser.parse_search_results(html, keyword)
+                if listings:
+                    listing_ids = [l.listing_id for l in listings]
+                    dup_ratio = db.get_duplicate_ratio(listing_ids)
+                    new_count = len(listings) - int(len(listings) * dup_ratio)
+                    logger.info(f"Page {page}: {new_count}/{len(listings)} new listings ({dup_ratio:.0%} duplicates)")
+
+                    if dup_ratio >= duplicate_threshold:
+                        logger.info(f"Stopping pagination: {dup_ratio:.0%} duplicates exceeds {duplicate_threshold:.0%} threshold")
+                        break
 
             if page >= calculated_max_pages:
                 break

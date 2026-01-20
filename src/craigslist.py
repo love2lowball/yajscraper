@@ -194,8 +194,10 @@ class CraigslistScraper(BaseScraper):
         category: str = "wta",
         price_min: int = None,
         price_max: int = None,
-        max_pages: int = 3,
+        max_pages: int = 2,
         parser=None,
+        db=None,
+        duplicate_threshold: float = 1.0,
     ) -> list[str]:
         """
         Search through multiple pages of results for a city.
@@ -208,6 +210,8 @@ class CraigslistScraper(BaseScraper):
             price_max: Maximum price
             max_pages: Maximum pages to fetch per city
             parser: Optional parser instance to get result count
+            db: Optional database instance for duplicate-based early termination
+            duplicate_threshold: Stop when 100% of page is duplicates (default 1.0)
 
         Returns:
             List of HTML contents from all pages
@@ -243,6 +247,19 @@ class CraigslistScraper(BaseScraper):
                     # No results, stop
                     break
 
+            # Check for duplicates to enable early termination
+            if db and parser and html:
+                listings = parser.parse_search_results(html, keyword, city)
+                if listings:
+                    listing_ids = [l.listing_id for l in listings]
+                    dup_ratio = db.get_duplicate_ratio(listing_ids)
+                    new_count = len(listings) - int(len(listings) * dup_ratio)
+                    logger.info(f"{city} page {page}: {new_count}/{len(listings)} new listings ({dup_ratio:.0%} duplicates)")
+
+                    if dup_ratio >= duplicate_threshold:
+                        logger.info(f"Stopping {city}: {dup_ratio:.0%} duplicates exceeds threshold")
+                        break
+
             if page >= calculated_max_pages - 1:
                 break
 
@@ -260,6 +277,7 @@ class CraigslistScraper(BaseScraper):
         price_max: int = None,
         max_pages_per_city: int = 2,
         parser=None,
+        db=None,
     ) -> dict[tuple[str, str, str], list[str]]:
         """
         Search all cities for all keywords.
@@ -272,6 +290,7 @@ class CraigslistScraper(BaseScraper):
             price_max: Maximum price
             max_pages_per_city: Max pages per city/keyword combo
             parser: Parser instance for result counts
+            db: Optional database instance for duplicate-based early termination
 
         Returns:
             Dict mapping (city, keyword, category) to list of HTML contents
@@ -299,6 +318,7 @@ class CraigslistScraper(BaseScraper):
                         price_max=price_max,
                         max_pages=max_pages_per_city,
                         parser=parser,
+                        db=db,
                     )
 
                     if html_pages:

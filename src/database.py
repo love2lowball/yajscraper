@@ -257,3 +257,40 @@ class ListingsDatabase:
         self.connection.commit()
         logger.info(f"Deleted {deleted} listings older than {days} days")
         return deleted
+
+    def check_exists_batch(self, listing_ids: list[str]) -> set[str]:
+        """
+        Check which listing IDs already exist in the database.
+
+        Args:
+            listing_ids: List of listing IDs to check
+
+        Returns:
+            Set of IDs that already exist
+        """
+        if not listing_ids:
+            return set()
+
+        cursor = self.connection.cursor()
+        placeholders = ",".join("?" * len(listing_ids))
+        cursor.execute(
+            f"SELECT auction_id FROM listings WHERE auction_id IN ({placeholders})",
+            listing_ids
+        )
+        return {row[0] for row in cursor.fetchall()}
+
+    def get_duplicate_ratio(self, listing_ids: list[str]) -> float:
+        """
+        Get the ratio of listing IDs that already exist in database.
+
+        Args:
+            listing_ids: List of listing IDs to check
+
+        Returns:
+            Ratio from 0.0 to 1.0 (1.0 = all duplicates)
+        """
+        if not listing_ids:
+            return 0.0
+
+        existing = self.check_exists_batch(listing_ids)
+        return len(existing) / len(listing_ids)

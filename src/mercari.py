@@ -4,12 +4,21 @@ import asyncio
 import logging
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from .base import Listing
 
 logger = logging.getLogger(__name__)
+
+# Import sort enums from mercapi
+try:
+    from mercapi.requests import SearchRequestData
+    SortBy = SearchRequestData.SortBy
+    SortOrder = SearchRequestData.SortOrder
+except ImportError:
+    SortBy = None
+    SortOrder = None
 
 # Mercari categories
 MERCARI_CATEGORIES = {
@@ -61,6 +70,7 @@ class MercariScraper:
         price_min: int = None,
         price_max: int = None,
         page_token: str = None,
+        sort_by_newest: bool = True,
     ):
         """
         Execute a search on Mercari Japan.
@@ -71,6 +81,7 @@ class MercariScraper:
             price_min: Minimum price in yen
             price_max: Maximum price in yen
             page_token: Token for pagination (from previous results)
+            sort_by_newest: Sort by newest first (default True)
 
         Returns:
             SearchResults object from mercapi, or None on failure
@@ -83,14 +94,21 @@ class MercariScraper:
 
             logger.info(f"Searching Mercari: '{keyword}' category={category}")
 
-            results = await client.search(
-                query=keyword,
-                categories=categories,
-                price_min=price_min,
-                price_max=price_max,
-                page_token=page_token,
-                # Note: status filter removed - mercapi returns active listings by default
-            )
+            # Build sort parameters
+            search_kwargs = {
+                "query": keyword,
+                "categories": categories,
+                "price_min": price_min,
+                "price_max": price_max,
+                "page_token": page_token,
+            }
+
+            # Sort by newest first if available
+            if sort_by_newest and SortBy is not None:
+                search_kwargs["sort_by"] = SortBy.SORT_CREATED_TIME
+                search_kwargs["sort_order"] = SortOrder.ORDER_DESC
+
+            results = await client.search(**search_kwargs)
 
             logger.info(f"Found {results.meta.num_found} total results")
             return results
@@ -106,6 +124,7 @@ class MercariScraper:
         price_min: int = None,
         price_max: int = None,
         max_pages: int = 5,
+        max_age_days: int = None,
     ) -> list:
         """
         Search through multiple pages of results.
@@ -116,6 +135,7 @@ class MercariScraper:
             price_min: Minimum price
             price_max: Maximum price
             max_pages: Maximum pages to fetch
+            max_age_days: Stop pagination when oldest listing exceeds this age
 
         Returns:
             List of all SearchResults objects
@@ -123,6 +143,15 @@ class MercariScraper:
         all_results = []
         page_token = None
         page = 0
+        consecutive_empty_pages = 0
+        required_empty_pages = 2  # Stop after 2 consecutive pages with no new listings
+
+        # Calculate cutoff time for early termination
+        cutoff_time = None
+        if max_age_days is not None:
+            cutoff_time = datetime.now() - timedelta(days=max_age_days)
+            logger.info(f"Looking for listings newer than {cutoff_time}")
+            logger.info(f"Will stop after {required_empty_pages} consecutive pages with no new listings")
 
         while page < max_pages:
             page += 1
@@ -141,6 +170,25 @@ class MercariScraper:
                 break
 
             all_results.append(results)
+
+            # Check if any listings on this page are within the max age
+            # Note: Mercari API doesn't reliably sort by created time, so we check all items
+            if cutoff_time is not None and results.items:
+                new_listings_on_page = sum(
+                    1 for item in results.items
+                    if getattr(item, 'created', None) and getattr(item, 'created') >= cutoff_time
+                )
+
+                if new_listings_on_page == 0:
+                    consecutive_empty_pages += 1
+                    logger.info(f"Page {page}: 0/{len(results.items)} new listings ({consecutive_empty_pages}/{required_empty_pages} consecutive empty)")
+
+                    if consecutive_empty_pages >= required_empty_pages:
+                        logger.info(f"Stopping pagination: {required_empty_pages} consecutive pages with no new listings")
+                        break
+                else:
+                    consecutive_empty_pages = 0  # Reset counter when we find new listings
+                    logger.info(f"Page {page}: {new_listings_on_page}/{len(results.items)} listings within {max_age_days} day(s)")
 
             # Check if there's a next page
             if not results.meta.next_page_token:
@@ -163,6 +211,7 @@ class MercariScraper:
         price_min: int = None,
         price_max: int = None,
         max_pages_per_search: int = 5,
+        max_age_days: int = None,
     ) -> dict:
         """
         Search all keywords across all categories.
@@ -173,6 +222,7 @@ class MercariScraper:
             price_min: Minimum price
             price_max: Maximum price
             max_pages_per_search: Max pages per keyword/category combo
+            max_age_days: Stop pagination when oldest listing exceeds this age
 
         Returns:
             Dict mapping (keyword, category) to list of SearchResults
@@ -195,6 +245,7 @@ class MercariScraper:
                     price_min=price_min,
                     price_max=price_max,
                     max_pages=max_pages_per_search,
+                    max_age_days=max_age_days,
                 )
 
                 if search_results:
@@ -287,6 +338,9 @@ class MercariParser:
         shipping_payer_id = getattr(item, 'shipping_payer_id', 0) or 0
         shipping_info = self._map_shipping(shipping_payer_id)
 
+        # Extract created date (when listing was posted)
+        posted_at = getattr(item, 'created', None)
+
         return Listing(
             listing_id=str(item_id),
             platform=self.PLATFORM_NAME,
@@ -302,6 +356,7 @@ class MercariParser:
             condition=condition,
             shipping_info=shipping_info,
             scraped_at=scraped_at,
+            posted_at=posted_at,
         )
 
     def _map_condition(self, condition_id: int) -> str:

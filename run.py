@@ -64,10 +64,11 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    python run.py                              # Run Yahoo Auctions (default)
+    python run.py                              # Run Yahoo Auctions (default, 1 day filter)
     python run.py --platform mercari           # Run Mercari Japan only
     python run.py --platform both              # Run both platforms
     python run.py --keywords "BBS,SSR"         # Specific keywords only
+    python run.py --max-days 7                 # Include listings from past 7 days
     python run.py --dry-run                    # No Discord notifications
     python run.py --verbose                    # Debug logging
     python run.py --test-webhook               # Test Discord connection
@@ -129,29 +130,29 @@ Examples:
     parser.add_argument(
         "--max-pages",
         type=int,
-        default=10,
-        help="Maximum pages to fetch per keyword/category for Yahoo (default: 10)",
+        default=1,
+        help="Maximum pages to fetch per keyword/category for Yahoo (default: 1 for 12-hour runs)",
     )
 
     parser.add_argument(
         "--mercari-max-pages",
         type=int,
         default=5,
-        help="Maximum pages to fetch per keyword/category for Mercari (default: 5)",
+        help="Maximum pages to fetch per keyword/category for Mercari (default: 5, stops after 2 consecutive pages with no new listings)",
     )
 
     parser.add_argument(
         "--jmty-max-pages",
         type=int,
-        default=5,
-        help="Maximum pages to fetch per keyword for JMTY (default: 5)",
+        default=1,
+        help="Maximum pages to fetch per keyword for JMTY (default: 1 for 12-hour runs)",
     )
 
     parser.add_argument(
         "--craigslist-max-pages",
         type=int,
-        default=2,
-        help="Maximum pages to fetch per city/keyword for Craigslist (default: 2)",
+        default=1,
+        help="Maximum pages to fetch per city/keyword for Craigslist (default: 1 for 12-hour runs)",
     )
 
     parser.add_argument(
@@ -164,6 +165,13 @@ Examples:
         "--us-keywords",
         type=str,
         help="Comma-separated keywords for US Craigslist search (overrides config)",
+    )
+
+    parser.add_argument(
+        "--max-days",
+        type=int,
+        default=1,
+        help="Only include listings from the past N days (default: 1 for daily runs)",
     )
 
     return parser.parse_args()
@@ -217,11 +225,19 @@ def get_mercari_categories(args: argparse.Namespace) -> list[int]:
 def run_yahoo_scraper(
     keywords: list[str],
     categories: list[str],
-    max_pages: int = 10,
+    max_pages: int = 1,
+    db=None,
     logger: logging.Logger = None,
 ) -> list:
     """
     Run Yahoo Auctions scraper.
+
+    Args:
+        keywords: Search terms
+        categories: Category IDs
+        max_pages: Max pages per keyword (default 2 for frequent runs)
+        db: Database instance for duplicate-based early termination
+        logger: Logger instance
 
     Returns:
         List of Listing objects
@@ -253,6 +269,7 @@ def run_yahoo_scraper(
                         category,
                         max_pages=max_pages,
                         parser=parser,
+                        db=db,
                     )
 
                     if html_pages:
@@ -284,6 +301,7 @@ async def run_mercari_scraper_async(
     keywords: list[str],
     categories: list[int],
     max_pages: int = 5,
+    max_age_days: int = None,
     logger: logging.Logger = None,
 ) -> list:
     """
@@ -310,6 +328,7 @@ async def run_mercari_scraper_async(
             price_min=config.MIN_PRICE,
             price_max=config.MAX_PRICE,
             max_pages_per_search=max_pages,
+            max_age_days=max_age_days,
         )
 
         for (keyword, category), search_results_list in results.items():
@@ -329,19 +348,27 @@ def run_mercari_scraper(
     keywords: list[str],
     categories: list[int],
     max_pages: int = 5,
+    max_age_days: int = None,
     logger: logging.Logger = None,
 ) -> list:
     """Synchronous wrapper for Mercari scraper."""
-    return asyncio.run(run_mercari_scraper_async(keywords, categories, max_pages, logger))
+    return asyncio.run(run_mercari_scraper_async(keywords, categories, max_pages, max_age_days, logger))
 
 
 def run_jmty_scraper(
     keywords: list[str],
-    max_pages: int = 5,
+    max_pages: int = 1,
+    db=None,
     logger: logging.Logger = None,
 ) -> list:
     """
     Run JMTY scraper.
+
+    Args:
+        keywords: Search terms
+        max_pages: Max pages per keyword (default 2 for frequent runs)
+        db: Database instance for duplicate-based early termination
+        logger: Logger instance
 
     Returns:
         List of Listing objects
@@ -375,6 +402,7 @@ def run_jmty_scraper(
                     price_max=config.MAX_PRICE,
                     max_pages=max_pages,
                     parser=parser,
+                    db=db,
                 )
 
                 if html_pages:
@@ -399,11 +427,19 @@ def run_jmty_scraper(
 def run_craigslist_scraper(
     keywords: list[str],
     cities: list[str],
-    max_pages: int = 2,
+    max_pages: int = 1,
+    db=None,
     logger: logging.Logger = None,
 ) -> list:
     """
     Run Craigslist US scraper.
+
+    Args:
+        keywords: Search terms
+        cities: Craigslist city subdomains
+        max_pages: Max pages per city (default 2 for frequent runs)
+        db: Database instance for duplicate-based early termination
+        logger: Logger instance
 
     Returns:
         List of Listing objects
@@ -428,6 +464,7 @@ def run_craigslist_scraper(
             price_max=config.US_MAX_PRICE,
             max_pages_per_city=max_pages,
             parser=parser,
+            db=db,
         )
 
         for (city, keyword, category), html_pages in results.items():
@@ -446,12 +483,13 @@ def run_scraper(
     platforms: list[str],
     dry_run: bool = False,
     logger: logging.Logger = None,
-    yahoo_max_pages: int = 10,
+    yahoo_max_pages: int = 1,
     mercari_max_pages: int = 5,
-    jmty_max_pages: int = 5,
+    jmty_max_pages: int = 1,
     us_keywords: list[str] = None,
     craigslist_cities: list[str] = None,
-    craigslist_max_pages: int = 2,
+    craigslist_max_pages: int = 1,
+    max_days: int = 1,
 ) -> int:
     """
     Main scraper execution.
@@ -469,65 +507,71 @@ def run_scraper(
         logger.info(f"Japan Keywords: {len(keywords)}")
     if us_keywords and "craigslist" in platforms:
         logger.info(f"US Keywords: {len(us_keywords)}")
+    logger.info(f"Max listing age: {max_days} day(s)")
     logger.info(f"Dry run: {dry_run}")
     logger.info("=" * 60)
 
     notifier = DiscordNotifier()
     all_listings = []
 
-    # Run Yahoo Auctions scraper
-    if "yahoo" in platforms:
-        yahoo_listings = run_yahoo_scraper(
-            keywords=keywords,
-            categories=yahoo_categories,
-            max_pages=yahoo_max_pages,
-            logger=logger,
-        )
-        all_listings.extend(yahoo_listings)
-
-    # Run Mercari scraper
-    if "mercari" in platforms:
-        mercari_listings = run_mercari_scraper(
-            keywords=keywords,
-            categories=mercari_categories,
-            max_pages=mercari_max_pages,
-            logger=logger,
-        )
-        all_listings.extend(mercari_listings)
-
-    # Run JMTY scraper
-    if "jmty" in platforms:
-        jmty_listings = run_jmty_scraper(
-            keywords=keywords,
-            max_pages=jmty_max_pages,
-            logger=logger,
-        )
-        all_listings.extend(jmty_listings)
-
-    # Run Craigslist US scraper
-    if "craigslist" in platforms:
-        if not us_keywords:
-            logger.warning("No US keywords configured for Craigslist")
-        elif not craigslist_cities:
-            logger.warning("No Craigslist cities configured")
-        else:
-            craigslist_listings = run_craigslist_scraper(
-                keywords=us_keywords,
-                cities=craigslist_cities,
-                max_pages=craigslist_max_pages,
+    # Open database early for duplicate-based early termination
+    with ListingsDatabase() as db:
+        # Run Yahoo Auctions scraper
+        if "yahoo" in platforms:
+            yahoo_listings = run_yahoo_scraper(
+                keywords=keywords,
+                categories=yahoo_categories,
+                max_pages=yahoo_max_pages,
+                db=db,
                 logger=logger,
             )
-            all_listings.extend(craigslist_listings)
+            all_listings.extend(yahoo_listings)
 
-    logger.info(f"Total listings found across all platforms: {len(all_listings)}")
+        # Run Mercari scraper
+        if "mercari" in platforms:
+            mercari_listings = run_mercari_scraper(
+                keywords=keywords,
+                categories=mercari_categories,
+                max_pages=mercari_max_pages,
+                max_age_days=max_days,
+                logger=logger,
+            )
+            all_listings.extend(mercari_listings)
 
-    # Apply filters
-    pre_filter_count = len(all_listings)
-    all_listings = filter_listings(all_listings)
-    logger.info(f"After filtering: {len(all_listings)} listings ({pre_filter_count - len(all_listings)} filtered out)")
+        # Run JMTY scraper
+        if "jmty" in platforms:
+            jmty_listings = run_jmty_scraper(
+                keywords=keywords,
+                max_pages=jmty_max_pages,
+                db=db,
+                logger=logger,
+            )
+            all_listings.extend(jmty_listings)
 
-    # Deduplicate and store
-    with ListingsDatabase() as db:
+        # Run Craigslist US scraper
+        if "craigslist" in platforms:
+            if not us_keywords:
+                logger.warning("No US keywords configured for Craigslist")
+            elif not craigslist_cities:
+                logger.warning("No Craigslist cities configured")
+            else:
+                craigslist_listings = run_craigslist_scraper(
+                    keywords=us_keywords,
+                    cities=craigslist_cities,
+                    max_pages=craigslist_max_pages,
+                    db=db,
+                    logger=logger,
+                )
+                all_listings.extend(craigslist_listings)
+
+        logger.info(f"Total listings found across all platforms: {len(all_listings)}")
+
+        # Apply filters
+        pre_filter_count = len(all_listings)
+        all_listings = filter_listings(all_listings, max_age_days=max_days)
+        logger.info(f"After filtering: {len(all_listings)} listings ({pre_filter_count - len(all_listings)} filtered out)")
+
+        # Deduplicate and store (db already open)
         new_listings = db.insert_listings(all_listings)
         stats = db.get_stats()
 
@@ -628,6 +672,7 @@ def main() -> int:
             us_keywords=us_keywords,
             craigslist_cities=craigslist_cities,
             craigslist_max_pages=args.craigslist_max_pages,
+            max_days=args.max_days,
         )
 
     except KeyboardInterrupt:
