@@ -403,20 +403,18 @@ class ScraperCog(commands.Cog):
 
             stats["total_found"] = len(all_listings)
 
-            # Filter listings (including date filter)
+            # Filter listings (including date filter) - run in thread to avoid blocking
             pre_filter = len(all_listings)
-            all_listings = filter_listings(all_listings, max_age_days=max_age_days)
+            all_listings = await asyncio.to_thread(
+                filter_listings, all_listings, max_age_days=max_age_days
+            )
             stats["filtered"] = pre_filter - len(all_listings)
 
-            # Store in database and get new listings
-            with ListingsDatabase() as db:
-                new_listings = db.insert_listings(all_listings)
-                stats["new_listings"] = len(new_listings)
-
-                # Mark as notified
-                if new_listings:
-                    listing_ids = [l.listing_id for l in new_listings]
-                    db.mark_as_notified(listing_ids)
+            # Store in database and get new listings - run in thread to avoid blocking
+            new_listings = await asyncio.to_thread(
+                self._store_listings, all_listings
+            )
+            stats["new_listings"] = len(new_listings)
 
             # Send results
             await self._send_results(channel, new_listings, stats, start_time, user, scheduled)
@@ -526,6 +524,18 @@ class ScraperCog(commands.Cog):
                     all_listings.extend(listings)
 
         return all_listings
+
+    def _store_listings(self, all_listings: list) -> list:
+        """Store listings in database and return new ones (sync)."""
+        with ListingsDatabase() as db:
+            new_listings = db.insert_listings(all_listings)
+
+            # Mark as notified
+            if new_listings:
+                listing_ids = [l.listing_id for l in new_listings]
+                db.mark_as_notified(listing_ids)
+
+        return new_listings
 
     async def _send_progress(self, channel: discord.TextChannel, message: str, platform: str):
         """Send a progress update."""
