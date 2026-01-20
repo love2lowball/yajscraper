@@ -81,7 +81,7 @@ class YahooAuctionsScraper(BaseScraper):
             "p": keyword,
             "auccat": category,
             "va": keyword,
-            "exflg": "1",  # Exclude ended auctions
+            "istatus": "2",  # Used items only (1=new, 2=used)
             "b": str(offset),
             "n": str(self.RESULTS_PER_PAGE),
             "s1": sort_map.get(sort, "new"),

@@ -37,8 +37,11 @@ class YahooAuctionsParser(BaseParser):
 
         # Yahoo Auctions uses different container classes
         # Try multiple selectors for robustness
+        # Note: Yahoo changed from "Product" to "Item" classes in 2025
         product_containers = (
-            soup.select(".Product") or
+            soup.select("li.Item") or  # New structure (2025+)
+            soup.select(".Result__items > li") or  # Alternative new selector
+            soup.select(".Product") or  # Old structure
             soup.select(".ProductList .Product") or
             soup.select("[data-auction-id]") or
             soup.select(".SearchResults .Product")
@@ -165,9 +168,18 @@ class YahooAuctionsParser(BaseParser):
 
     def _extract_title(self, container) -> Optional[str]:
         """Extract the listing title."""
-        # Try common title selectors
+        # First try data attribute (most reliable in new structure)
+        elem_with_title = container.find(attrs={"data-auction-title": True})
+        if elem_with_title:
+            title = elem_with_title.get("data-auction-title")
+            if title and len(title) > 3:
+                return title
+
+        # Try common title selectors (new Item classes first, then old Product classes)
         title_selectors = [
-            ".Product__title",
+            ".Item__title",  # New structure (2025+)
+            ".Item__link",  # New structure link element
+            ".Product__title",  # Old structure
             ".Product__titleLink",
             "[data-auction-title]",
             "h3 a",
@@ -186,8 +198,21 @@ class YahooAuctionsParser(BaseParser):
 
     def _extract_current_price(self, container) -> int:
         """Extract current bid price in yen."""
+        # First try data attribute (most reliable in new structure)
+        elem_with_price = container.find(attrs={"data-auction-price": True})
+        if elem_with_price:
+            price_str = elem_with_price.get("data-auction-price")
+            if price_str:
+                try:
+                    return int(price_str)
+                except ValueError:
+                    pass
+
+        # Try selectors (new Item classes first, then old Product classes)
         price_selectors = [
-            ".Product__priceValue",
+            ".Item__priceValue",  # New structure (2025+)
+            ".Item__price",  # New structure
+            ".Product__priceValue",  # Old structure
             ".Product__price",
             "[data-auction-price]",
             ".Price__value",
@@ -254,7 +279,9 @@ class YahooAuctionsParser(BaseParser):
     def _extract_bids(self, container) -> int:
         """Extract number of bids."""
         bid_selectors = [
-            ".Product__bid",
+            ".Item__bid .Item__text",  # New structure (2025+)
+            ".Item__bid",  # New structure
+            ".Product__bid",  # Old structure
             ".Product__bidCount",
             "[data-auction-bids]",
         ]
@@ -262,7 +289,11 @@ class YahooAuctionsParser(BaseParser):
         for selector in bid_selectors:
             elem = container.select_one(selector)
             if elem:
-                match = re.search(r"(\d+)", elem.get_text())
+                text = elem.get_text(strip=True)
+                # Skip "-" which means no bids
+                if text == "-":
+                    return 0
+                match = re.search(r"(\d+)", text)
                 if match:
                     return int(match.group(1))
 
@@ -271,7 +302,9 @@ class YahooAuctionsParser(BaseParser):
     def _extract_time_remaining(self, container) -> str:
         """Extract time remaining string."""
         time_selectors = [
-            ".Product__time",
+            ".Item__time .Item__text",  # New structure (2025+)
+            ".Item__time",  # New structure
+            ".Product__time",  # Old structure
             ".Product__timeRemaining",
             "[data-auction-time]",
         ]
@@ -331,8 +364,17 @@ class YahooAuctionsParser(BaseParser):
 
     def _extract_seller_id(self, container) -> str:
         """Extract seller username."""
+        # Try data attribute first (new structure uses encoded seller ID)
+        elem_with_seller = container.find(attrs={"data-auction-auc-seller-id": True})
+        if elem_with_seller:
+            seller_id = elem_with_seller.get("data-auction-auc-seller-id")
+            if seller_id:
+                return seller_id
+
         seller_selectors = [
-            ".Product__seller a",
+            ".Item__seller a",  # New structure (2025+)
+            ".Item__sellerName",  # New structure
+            ".Product__seller a",  # Old structure
             ".Product__sellerName",
             "[data-auction-seller]",
             ".Seller__name",
@@ -352,8 +394,19 @@ class YahooAuctionsParser(BaseParser):
 
     def _extract_seller_rating(self, container) -> str:
         """Extract seller rating/feedback score."""
+        # Try to extract from data-cl-params (new structure has grat=99.6 format)
+        elem_with_params = container.find(attrs={"data-cl-params": True})
+        if elem_with_params:
+            params = elem_with_params.get("data-cl-params", "")
+            # Look for grat (good rating percentage)
+            match = re.search(r"grat:([\d.]+)", params)
+            if match:
+                return match.group(1)
+
         rating_selectors = [
-            ".Product__sellerRating",
+            ".Item__sellerRating",  # New structure (2025+)
+            ".Item__rating",  # New structure
+            ".Product__sellerRating",  # Old structure
             ".Seller__rating",
             "[data-auction-rating]",
         ]
@@ -373,8 +426,17 @@ class YahooAuctionsParser(BaseParser):
 
     def _extract_thumbnail(self, container) -> str:
         """Extract thumbnail image URL."""
+        # First try data attribute (most reliable in new structure)
+        elem_with_img = container.find(attrs={"data-auction-img": True})
+        if elem_with_img:
+            img_url = elem_with_img.get("data-auction-img")
+            if img_url:
+                return img_url
+
         img_selectors = [
-            ".Product__imageData img",
+            "img.Item__imageData",  # New structure (2025+)
+            ".Item__image img",  # New structure
+            ".Product__imageData img",  # Old structure
             ".Product__image img",
             "img[src*='auctions.c.yimg.jp']",
             "img",
@@ -393,9 +455,10 @@ class YahooAuctionsParser(BaseParser):
         """Extract total number of search results."""
         soup = BeautifulSoup(html, "lxml")
 
-        # Look for result count element
+        # Look for result count element (new structure first)
         count_selectors = [
-            ".SearchResult__count",
+            ".Tab__subText",  # New structure (2025+) - shows "24,233件"
+            ".SearchResult__count",  # Old structure
             ".ResultCount__number",
             "[data-result-count]",
         ]
@@ -405,12 +468,23 @@ class YahooAuctionsParser(BaseParser):
             if elem:
                 match = re.search(r"([\d,]+)", elem.get_text())
                 if match:
-                    return int(match.group(1).replace(",", ""))
+                    count = int(match.group(1).replace(",", ""))
+                    # Sanity check - return only if it's a reasonable count
+                    if count >= 1:
+                        return count
 
-        # Fallback: search for pattern in page
+        # Fallback: search for specific pattern in page - look for "X件" at word boundary
+        # Avoid matching notification text like "500件以上"
         text = soup.get_text()
-        match = re.search(r"([\d,]+)\s*件", text)
-        if match:
-            return int(match.group(1).replace(",", ""))
+        # Look for count in common result display patterns
+        patterns = [
+            r"全\s*([\d,]+)\s*件",  # "全 24,233件"
+            r"約\s*([\d,]+)\s*件",  # "約 24,233件"
+            r"([\d,]+)\s*件出品中",  # "24,233件出品中"
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if match:
+                return int(match.group(1).replace(",", ""))
 
         return 0
