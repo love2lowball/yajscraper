@@ -91,7 +91,8 @@ class ScraperCog(commands.Cog):
             platforms=["yahoo", "mercari", "jmty"],
             keywords=config.PRIMARY_KEYWORDS,
             us_keywords=[],
-            max_pages=5,
+            max_pages=10,
+            max_age_days=7,
             scheduled=True,
         )
 
@@ -105,7 +106,7 @@ class ScraperCog(commands.Cog):
     @app_commands.describe(
         platform="Platform(s) to scrape",
         keywords="Custom keywords (comma-separated, e.g., 'BBS,SSR,Work Equip')",
-        max_pages="Maximum pages per search (default: 5)",
+        max_days="Only show listings from the last N days (default: 7)",
     )
     @app_commands.choices(platform=PLATFORM_CHOICES)
     async def run_scraper(
@@ -113,7 +114,7 @@ class ScraperCog(commands.Cog):
         interaction: discord.Interaction,
         platform: app_commands.Choice[str],
         keywords: Optional[str] = None,
-        max_pages: Optional[int] = 5,
+        max_days: Optional[int] = 7,
     ):
         """Run the scraper manually."""
         # Check if already scraping
@@ -173,7 +174,7 @@ class ScraperCog(commands.Cog):
         else:
             embed.add_field(name="Keywords", value=" | ".join(kw_display), inline=True)
 
-        embed.add_field(name="Max Pages", value=str(max_pages), inline=True)
+        embed.add_field(name="Max Age", value=f"{max_days} days", inline=True)
         embed.set_footer(text=f"Requested by {interaction.user.name}")
 
         await interaction.followup.send(embed=embed)
@@ -184,7 +185,8 @@ class ScraperCog(commands.Cog):
             platforms=platforms,
             keywords=jp_keywords,
             us_keywords=us_keywords,
-            max_pages=max_pages,
+            max_pages=10,  # Fetch more pages, filter by date
+            max_age_days=max_days,
             scheduled=False,
             user=interaction.user,
         )
@@ -251,7 +253,8 @@ class ScraperCog(commands.Cog):
             platforms=platforms,
             keywords=keyword_list,
             us_keywords=keyword_list,
-            max_pages=3,  # Quick search uses fewer pages
+            max_pages=5,  # Quick search uses fewer pages
+            max_age_days=7,
             scheduled=False,
             user=interaction.user,
         )
@@ -335,6 +338,7 @@ class ScraperCog(commands.Cog):
         keywords: list[str],
         us_keywords: list[str],
         max_pages: int,
+        max_age_days: int = 7,
         scheduled: bool = False,
         user: Optional[discord.User] = None,
     ):
@@ -399,9 +403,9 @@ class ScraperCog(commands.Cog):
 
             stats["total_found"] = len(all_listings)
 
-            # Filter listings
+            # Filter listings (including date filter)
             pre_filter = len(all_listings)
-            all_listings = filter_listings(all_listings)
+            all_listings = filter_listings(all_listings, max_age_days=max_age_days)
             stats["filtered"] = pre_filter - len(all_listings)
 
             # Store in database and get new listings

@@ -61,6 +61,7 @@ class Listing:
 
     # Metadata
     scraped_at: datetime = field(default_factory=datetime.now)
+    posted_at: Optional[datetime] = None  # When the listing was posted
 
     # Condition/status
     condition: str = ""          # e.g., "used", "new", "like_new"
@@ -73,6 +74,8 @@ class Listing:
         if data["end_time"]:
             data["end_time"] = data["end_time"].isoformat()
         data["scraped_at"] = data["scraped_at"].isoformat()
+        if data["posted_at"]:
+            data["posted_at"] = data["posted_at"].isoformat()
         # Convert list to comma-separated string for simple storage
         data["image_urls"] = ",".join(data["image_urls"]) if data["image_urls"] else ""
         return data
@@ -85,6 +88,8 @@ class Listing:
             data["end_time"] = datetime.fromisoformat(data["end_time"])
         if isinstance(data.get("scraped_at"), str):
             data["scraped_at"] = datetime.fromisoformat(data["scraped_at"])
+        if isinstance(data.get("posted_at"), str) and data["posted_at"]:
+            data["posted_at"] = datetime.fromisoformat(data["posted_at"])
         # Handle image_urls conversion
         if isinstance(data.get("image_urls"), str):
             data["image_urls"] = data["image_urls"].split(",") if data["image_urls"] else []
