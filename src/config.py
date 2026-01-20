@@ -112,6 +112,11 @@ EXCLUDE_KEYWORDS = [
     "スタッドレス",       # studless/winter tires
     "タイヤのみ",         # tires only (no wheels)
 
+    # Condition we don't want (new items)
+    "新品",               # brand new
+    "未使用",             # unused/never used
+    "新品未使用",         # brand new unused
+
     # Other noise
     "軽自動車",           # kei car (too small usually)
     "12インチ",           # 12 inch (too small)
@@ -120,7 +125,7 @@ EXCLUDE_KEYWORDS = [
 
 # Price filters (yen)
 MIN_PRICE = 5000        # Skip below this (likely junk or parts)
-MAX_PRICE = 2000000     # Skip above this (out of range)
+MAX_PRICE = 250000      # Skip above this (out of range)
 
 # Require keywords - if set, listing must contain at least one of these
 # Leave empty to disable

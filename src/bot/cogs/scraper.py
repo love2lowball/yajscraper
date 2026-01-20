@@ -24,8 +24,11 @@ logger = logging.getLogger("wheelbot.scraper")
 # PST timezone (UTC-8)
 PST = timezone(timedelta(hours=-8))
 
-# Scheduled run times
-JAPAN_SCHEDULE_TIME = time(hour=3, minute=0, tzinfo=PST)  # 3:00 AM PST daily
+# Scheduled run times (5am and 5pm Pacific)
+JAPAN_SCHEDULE_TIMES = [
+    time(hour=5, minute=0, tzinfo=PST),   # 5:00 AM PST
+    time(hour=17, minute=0, tzinfo=PST),  # 5:00 PM PST
+]
 
 # Platform choices for slash commands
 PLATFORM_CHOICES = [
@@ -64,18 +67,18 @@ class ScraperCog(commands.Cog):
     def cog_unload(self):
         self.japan_scheduled_task.cancel()
 
-    @tasks.loop(time=JAPAN_SCHEDULE_TIME)
+    @tasks.loop(time=JAPAN_SCHEDULE_TIMES)
     async def japan_scheduled_task(self):
-        """Run Japan scraping daily at 3:00 AM PST."""
+        """Run Japan scraping at 5:00 AM and 5:00 PM PST."""
         if not self.bot.notification_channel:
             return
 
-        logger.info("Starting scheduled Japan scrape (3:00 AM PST)...")
+        logger.info("Starting scheduled Japan scrape...")
 
         # Send notification that scheduled run is starting
         embed = discord.Embed(
             title="Scheduled Scrape Starting",
-            description="Running daily Japan market search (3:00 AM PST)",
+            description="Running scheduled Japan market search",
             color=discord.Color.blue(),
             timestamp=datetime.now(),
         )
@@ -96,7 +99,7 @@ class ScraperCog(commands.Cog):
     async def before_japan_scheduled_task(self):
         """Wait for bot to be ready before starting scheduled tasks."""
         await self.bot.wait_until_ready()
-        logger.info(f"Japan scheduled task ready. Next run at 3:00 AM PST")
+        logger.info("Japan scheduled task ready. Runs at 5:00 AM and 5:00 PM PST")
 
     @app_commands.command(name="run", description="Run the scraper on specified platforms")
     @app_commands.describe(
