@@ -278,6 +278,12 @@ def run_yahoo_scraper(
                             listings = parser.parse_search_results(html, keyword)
                             keyword_listings.extend(listings)
 
+                            # Save the raw page so a Yahoo HTML change can be diagnosed
+                            if not listings:
+                                dump_path = config.LOGS_DIR / f"yahoo_empty_{datetime.now():%Y%m%d_%H%M%S}_p{page_num}.html"
+                                dump_path.write_text(html, encoding="utf-8")
+                                logger.warning(f"  No listings parsed from page {page_num}; saved HTML to {dump_path}")
+
                         logger.info(f"  Found {len(keyword_listings)} listings across {len(html_pages)} page(s)")
                         all_listings.extend(keyword_listings)
                     else:
