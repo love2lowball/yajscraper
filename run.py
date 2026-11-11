@@ -278,11 +278,12 @@ def run_yahoo_scraper(
                             listings = parser.parse_search_results(html, keyword)
                             keyword_listings.extend(listings)
 
-                            # Save the raw page so a Yahoo HTML change can be diagnosed
-                            if not listings:
+                            # Yahoo reports results but none parsed: the page layout changed.
+                            # Save the raw page so the parser can be updated against it.
+                            if not listings and parser.get_result_count(html) > 0:
                                 dump_path = config.LOGS_DIR / f"yahoo_empty_{datetime.now():%Y%m%d_%H%M%S}_p{page_num}.html"
                                 dump_path.write_text(html, encoding="utf-8")
-                                logger.warning(f"  No listings parsed from page {page_num}; saved HTML to {dump_path}")
+                                logger.error(f"  Yahoo reported results but none were parsed from page {page_num}; saved HTML to {dump_path}")
 
                         logger.info(f"  Found {len(keyword_listings)} listings across {len(html_pages)} page(s)")
                         all_listings.extend(keyword_listings)
@@ -532,6 +533,14 @@ def run_scraper(
                 logger=logger,
             )
             all_listings.extend(yahoo_listings)
+
+            # Across every keyword this means Yahoo blocked us or changed its page again
+            if keywords and not yahoo_listings and not dry_run:
+                notifier.send_error_alert(
+                    "Yahoo Auctions returned 0 listings across all searches. "
+                    "Yahoo may be blocking requests or have changed its page layout. "
+                    "Check the log and any logs/yahoo_empty_*.html files."
+                )
 
         # Run Mercari scraper
         if "mercari" in platforms:

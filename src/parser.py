@@ -1,6 +1,7 @@
 """HTML parsing for Yahoo Auctions Japan search results."""
 
 import re
+import json
 import logging
 import traceback
 from datetime import datetime, timedelta
@@ -35,7 +36,25 @@ class YahooAuctionsParser(BaseParser):
         listings = []
         scraped_at = datetime.now()
 
-        # Yahoo Auctions uses different container classes
+        # Since late 2026 the search page is a Next.js app: the HTML only holds
+        # loading placeholders and the results live in the __NEXT_DATA__ JSON
+        items = self._get_next_data_items(soup)
+        if items is not None:
+            for i, item in enumerate(items):
+                try:
+                    listing = self._parse_next_data_item(item, search_keyword, scraped_at)
+                    if listing:
+                        listings.append(listing)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to parse listing {i+1}/{len(items)}: {e}\n"
+                        f"Traceback: {traceback.format_exc()}\n"
+                        f"Item JSON (first 500 chars): {json.dumps(item, ensure_ascii=False)[:500]}"
+                    )
+            logger.info(f"Successfully parsed {len(listings)} listings from {len(items)} items (__NEXT_DATA__)")
+            return listings
+
+        # Older server-rendered pages: Yahoo Auctions uses different container classes
         # Try multiple selectors for robustness
         # Note: Yahoo changed from "Product" to "Item" classes in 2025
         product_containers = (
@@ -69,6 +88,83 @@ class YahooAuctionsParser(BaseParser):
 
         logger.info(f"Successfully parsed {len(listings)} listings from {len(product_containers)} containers")
         return listings
+
+    def _get_next_data_listing(self, soup: BeautifulSoup) -> Optional[dict]:
+        """Return the search listing block from the __NEXT_DATA__ JSON, if present."""
+        script = soup.find("script", id="__NEXT_DATA__")
+        if not script or not script.string:
+            return None
+
+        try:
+            data = json.loads(script.string)
+            return data["props"]["pageProps"]["initialState"]["search"]["items"]["listing"]
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.warning(f"__NEXT_DATA__ found but search listing missing: {e}")
+            return None
+
+    def _get_next_data_items(self, soup: BeautifulSoup) -> Optional[list]:
+        """Return the list of item dicts from __NEXT_DATA__, or None if not a Next.js page."""
+        listing = self._get_next_data_listing(soup)
+        if listing is None:
+            return None
+        return listing.get("items") or []
+
+    def _parse_next_data_item(
+        self,
+        item: dict,
+        search_keyword: str,
+        scraped_at: datetime
+    ) -> Optional[Listing]:
+        """Convert one __NEXT_DATA__ item dict into a Listing."""
+        auction_id = item.get("auctionId")
+        title = (item.get("title") or "").strip()
+        if not auction_id or not title:
+            return None
+
+        seller = item.get("seller") or {}
+
+        return Listing(
+            listing_id=auction_id,
+            platform=self.PLATFORM_NAME,
+            title=title,
+            current_price=int(item.get("price") or 0),
+            currency="JPY",
+            buyout_price=item.get("buyNowPrice") or None,
+            bids=int(item.get("bidCount") or 0),
+            time_remaining=self._format_left_time(item.get("leftTime")),
+            end_time=self._parse_iso_time(item.get("endTime")),
+            seller_id=seller.get("userId", ""),
+            seller_name=seller.get("displayName", ""),
+            seller_rating=seller.get("goodRating", ""),
+            thumbnail_url=item.get("imageUrl", ""),
+            listing_url=f"{self.listing_url_base}/{auction_id}",
+            search_keyword=search_keyword,
+            scraped_at=scraped_at,
+            posted_at=self._parse_iso_time(item.get("startTime")),
+            condition=item.get("itemCondition", ""),
+        )
+
+    def _parse_iso_time(self, value: Optional[str]) -> Optional[datetime]:
+        """Parse an ISO timestamp like 2026-11-12T20:37:22+09:00 into naive local time."""
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value).astimezone().replace(tzinfo=None)
+        except ValueError:
+            return None
+
+    def _format_left_time(self, seconds) -> str:
+        """Format seconds remaining as e.g. '2日8時間' or '5時間12分'."""
+        if not seconds:
+            return ""
+        minutes = int(seconds) // 60
+        days, minutes = divmod(minutes, 60 * 24)
+        hours, minutes = divmod(minutes, 60)
+        if days:
+            return f"{days}日{hours}時間"
+        if hours:
+            return f"{hours}時間{minutes}分"
+        return f"{minutes}分"
 
     def _find_product_containers_fallback(self, soup: BeautifulSoup) -> list:
         """Fallback method to find product containers."""
@@ -454,6 +550,10 @@ class YahooAuctionsParser(BaseParser):
     def get_result_count(self, html: str) -> int:
         """Extract total number of search results."""
         soup = BeautifulSoup(html, "lxml")
+
+        listing = self._get_next_data_listing(soup)
+        if listing is not None:
+            return int(listing.get("totalResultsAvailable") or 0)
 
         # Look for result count element (new structure first)
         count_selectors = [
