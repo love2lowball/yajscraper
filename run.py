@@ -586,8 +586,14 @@ def run_scraper(
         all_listings = filter_listings(all_listings, max_age_days=max_days)
         logger.info(f"After filtering: {len(all_listings)} listings ({pre_filter_count - len(all_listings)} filtered out)")
 
-        # Deduplicate and store (db already open)
-        new_listings = db.insert_listings(all_listings)
+        # Deduplicate and store (db already open). A dry run only reports what
+        # is new: storing would make the next real run treat it as already seen.
+        if dry_run:
+            existing = db.check_exists_batch([l.listing_id for l in all_listings])
+            unique = {l.listing_id: l for l in all_listings if l.listing_id not in existing}
+            new_listings = list(unique.values())
+        else:
+            new_listings = db.insert_listings(all_listings)
         stats = db.get_stats()
 
         logger.info(f"New listings: {len(new_listings)}")
