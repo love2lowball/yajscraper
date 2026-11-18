@@ -198,7 +198,7 @@ class DiscordNotifier:
             # Load existing queue
             queue = []
             if self.queue_file.exists():
-                with open(self.queue_file, "r") as f:
+                with open(self.queue_file, "r", encoding="utf-8") as f:
                     queue = json.load(f)
 
             # Add new items
@@ -209,7 +209,7 @@ class DiscordNotifier:
                     queue.append(listing)
 
             # Save queue
-            with open(self.queue_file, "w") as f:
+            with open(self.queue_file, "w", encoding="utf-8") as f:
                 json.dump(queue, f, indent=2, ensure_ascii=False)
 
             logger.info(f"Queued {len(listings)} notifications for retry")
@@ -223,7 +223,7 @@ class DiscordNotifier:
             return True
 
         try:
-            with open(self.queue_file, "r") as f:
+            with open(self.queue_file, "r", encoding="utf-8") as f:
                 queue = json.load(f)
 
             if not queue:
