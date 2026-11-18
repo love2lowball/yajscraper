@@ -4,7 +4,7 @@ import re
 import logging
 from datetime import datetime
 from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
 from bs4 import BeautifulSoup
 
@@ -389,8 +389,8 @@ class JMTYParser:
         # Extract thumbnail
         thumbnail_url = self._extract_thumbnail(container)
 
-        # Build listing URL
-        listing_url = f"https://jmty.jp{href}"
+        # Build listing URL (hrefs may be relative or already absolute)
+        listing_url = urljoin("https://jmty.jp", href)
 
         return Listing(
             listing_id=listing_id,
@@ -504,12 +504,10 @@ class JMTYParser:
                 # Skip placeholder images
                 if "no_img" in src or "placeholder" in src:
                     return ""
-                # Make sure it's a full URL
-                if src.startswith("//"):
-                    src = "https:" + src
-                elif src.startswith("/"):
-                    src = "https://jmty.jp" + src
-                return src
+                # Make sure it's a full URL; skip data: URIs and other placeholders
+                src = urljoin("https://jmty.jp", src)
+                if src.startswith(("http://", "https://")):
+                    return src
         return ""
 
     def get_result_count(self, html: str) -> int:

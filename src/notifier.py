@@ -30,19 +30,24 @@ class DiscordNotifier:
             logger.warning("Discord webhook URL not configured")
             return False
 
+        # Errors never include the webhook URL: it is a secret and ends up in logs
         try:
             response = requests.post(
                 self.webhook_url,
                 json=payload,
                 timeout=30,
             )
-            response.raise_for_status()
-            logger.debug("Discord webhook sent successfully")
-            return True
-
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to send Discord webhook: {e}")
+            logger.error(f"Failed to send Discord webhook: {type(e).__name__}")
             return False
+
+        if not response.ok:
+            # Discord's response body names the field it rejected
+            logger.error(f"Failed to send Discord webhook: HTTP {response.status_code} {response.text[:500]}")
+            return False
+
+        logger.debug("Discord webhook sent successfully")
+        return True
 
     def _format_price(self, price: int, currency: str = "JPY") -> str:
         """Format price with thousands separator and currency symbol."""
@@ -108,12 +113,13 @@ class DiscordNotifier:
         embed = {
             "title": title[:256],  # Discord title limit
             "description": description,
-            "url": listing_url,
             "color": pinfo["color"],
         }
 
-        # Add thumbnail if available
-        if thumbnail_url:
+        # Discord rejects the whole message if any embed URL is not http(s)
+        if (listing_url or "").startswith(("http://", "https://")):
+            embed["url"] = listing_url
+        if (thumbnail_url or "").startswith(("http://", "https://")):
             embed["thumbnail"] = {"url": thumbnail_url}
 
         return embed
@@ -160,7 +166,7 @@ class DiscordNotifier:
 
             # Build content header
             if batch_num == 1:
-                content = f"🔔 **New Yahoo Auctions Listings** — Found {len(listings)} new wheels"
+                content = f"🔔 **New Wheel Listings** — Found {len(listings)} new wheels"
             else:
                 content = f"📦 Continued ({batch_num}/{total_batches})..."
 
