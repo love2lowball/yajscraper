@@ -116,6 +116,9 @@ EXCLUDE_KEYWORDS = [
     "未使用",             # unused/never used
     "新品未使用",         # brand new unused
 
+    # Brands we don't want
+    "共豊",               # Kyoho
+
     # Other noise
     "軽自動車",           # kei car (too small usually)
     "12インチ",           # 12 inch (too small)
