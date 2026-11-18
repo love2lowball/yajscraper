@@ -68,7 +68,6 @@ PRIMARY_KEYWORDS = [
     "carving",             # carving
     "カービング",          # carving (Japanese)
     "ギャルソン",          # Garson
-    "bridgestone",         # Bridgestone
     "BIM",                 # Bridgestone BIM studio
     "リバレル",            # re-barrel
     "トラフィックスター",  # Traffic Star
