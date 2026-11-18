@@ -16,9 +16,16 @@ try:
     from mercapi.requests import SearchRequestData
     SortBy = SearchRequestData.SortBy
     SortOrder = SearchRequestData.SortOrder
+    Status = SearchRequestData.Status
 except ImportError:
     SortBy = None
     SortOrder = None
+    Status = None
+
+# Mercari item condition IDs: 1=新品、未使用 2=未使用に近い 3=目立った傷や汚れなし
+# 4=やや傷や汚れあり 5=傷や汚れあり 6=全体的に状態が悪い
+NEW_CONDITION_ID = 1
+USED_CONDITION_IDS = [2, 3, 4, 5, 6]
 
 # Mercari categories
 MERCARI_CATEGORIES = {
@@ -95,13 +102,17 @@ class MercariScraper:
             logger.info(f"Searching Mercari: '{keyword}' category={category}")
 
             # Build sort parameters
+            # Only items still for sale, and only used ones (skip 新品、未使用)
             search_kwargs = {
                 "query": keyword,
                 "categories": categories,
                 "price_min": price_min,
                 "price_max": price_max,
                 "page_token": page_token,
+                "item_conditions": USED_CONDITION_IDS,
             }
+            if Status is not None:
+                search_kwargs["status"] = [Status.STATUS_ON_SALE]
 
             # Sort by newest first if available
             if sort_by_newest and SortBy is not None:
@@ -332,6 +343,9 @@ class MercariParser:
 
         # Extract condition (mercapi uses item_condition_id as int)
         condition_id = getattr(item, 'item_condition_id', 0) or 0
+        if condition_id == NEW_CONDITION_ID:
+            # The search already excludes new items; this guards against results that slip through
+            return None
         condition = self._map_condition(condition_id)
 
         # Extract shipping info (mercapi uses shipping_payer_id as int)
