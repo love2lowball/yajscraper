@@ -118,12 +118,21 @@ EXCLUDE_KEYWORDS = [
 
     # Brands we don't want
     "共豊",               # Kyoho
+    "純正",               # OEM / factory wheels
+    "専用",               # vehicle-specific fitment
 
     # Other noise
     "軽自動車",           # kei car (too small usually)
     "12インチ",           # 12 inch (too small)
     "13インチ",           # 13 inch (usually too small)
 ]
+
+# Exceptions to EXCLUDE_KEYWORDS: a listing matching a blacklisted term is kept
+# if its title also contains one of these phrases. Matching ignores spaces and
+# full-width/half-width differences (純正 オプション, 純正ＯＰ).
+EXCLUDE_EXCEPTIONS = {
+    "純正": ["純正オプション", "純正OP"],  # factory-option wheels, often BBS-made
+}
 
 # Price filters (yen)
 MIN_PRICE = 5000        # Skip below this (likely junk or parts)

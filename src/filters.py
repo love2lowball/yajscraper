@@ -1,8 +1,9 @@
 """Filtering logic for auction listings."""
 
 import logging
+import unicodedata
 from datetime import datetime, timedelta
-from typing import Union
+from typing import Optional, Union
 
 from .base import Listing
 from . import config
@@ -75,6 +76,31 @@ def is_listing_too_old(listing: Union[Listing, dict], max_age_days: int = DEFAUL
     return False
 
 
+def _normalize(text: str) -> str:
+    """Fold full-width/half-width forms and case, and drop spaces, for exception matching."""
+    return unicodedata.normalize("NFKC", text).lower().replace(" ", "")
+
+
+def _matched_exclude(title: str, exclude_keywords: list) -> Optional[str]:
+    """Return the blacklisted term in the title, or None if it passes (exceptions applied)."""
+    title_lower = title.lower()
+    normalized = None
+
+    for exclude in exclude_keywords:
+        if exclude.lower() not in title_lower and exclude not in title:
+            continue
+
+        exceptions = getattr(config, "EXCLUDE_EXCEPTIONS", {}).get(exclude, [])
+        if exceptions:
+            normalized = normalized or _normalize(title)
+            if any(_normalize(phrase) in normalized for phrase in exceptions):
+                continue
+
+        return exclude
+
+    return None
+
+
 def _get_filter_config(platform: str) -> tuple[list, int, int, list]:
     """
     Get filter configuration based on platform.
@@ -129,10 +155,10 @@ def filter_listing(listing: Union[Listing, dict], max_age_days: int = DEFAULT_MA
     exclude_keywords, min_price, max_price, require_keywords = _get_filter_config(platform)
 
     # Check exclude keywords
-    for exclude in exclude_keywords:
-        if exclude.lower() in title_lower or exclude in title:
-            logger.debug(f"Filtered out (exclude '{exclude}'): {title[:50]}...")
-            return False
+    exclude = _matched_exclude(title, exclude_keywords)
+    if exclude:
+        logger.debug(f"Filtered out (exclude '{exclude}'): {title[:50]}...")
+        return False
 
     # Check price range
     if price < min_price:
@@ -215,12 +241,11 @@ def get_filter_stats(listings: list[Union[Listing, dict]]) -> dict:
         exclude_keywords, min_price, max_price, require_keywords = _get_filter_config(platform)
 
         # Check excludes
-        for exclude in exclude_keywords:
-            if exclude.lower() in title_lower or exclude in title:
-                stats["excluded_keyword"] += 1
-                stats["exclude_reasons"][exclude] = stats["exclude_reasons"].get(exclude, 0) + 1
-                filtered = True
-                break
+        exclude = _matched_exclude(title, exclude_keywords)
+        if exclude:
+            stats["excluded_keyword"] += 1
+            stats["exclude_reasons"][exclude] = stats["exclude_reasons"].get(exclude, 0) + 1
+            filtered = True
 
         if not filtered and price < min_price:
             stats["price_too_low"] += 1
