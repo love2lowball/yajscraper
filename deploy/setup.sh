@@ -4,23 +4,26 @@
 
 set -e
 
+# Keep apt from stopping at interactive prompts (e.g. "restart services?")
+export DEBIAN_FRONTEND=noninteractive
+
 echo "=========================================="
 echo "Wheel Scraper Bot - Oracle Cloud Setup"
 echo "=========================================="
 
 # Update system
 echo "[1/7] Updating system packages..."
-sudo apt update && sudo apt upgrade -y
+sudo -E apt update && sudo -E apt upgrade -y
 
 # Install Python and dependencies
 echo "[2/7] Installing Python and dependencies..."
-sudo apt install -y python3 python3-pip python3-venv git
+sudo -E apt install -y python3 python3-pip python3-venv git
 
 # Clone repository (if not already cloned)
 if [ ! -d "/home/ubuntu/yajscraper" ]; then
     echo "[3/7] Cloning repository..."
     cd /home/ubuntu
-    git clone https://github.com/YOUR_USERNAME/yajscraper.git
+    git clone https://github.com/love2lowball/yajscraper.git
 else
     echo "[3/7] Repository already exists, pulling latest..."
     cd /home/ubuntu/yajscraper
@@ -68,5 +71,5 @@ echo "4. Check status:"
 echo "   sudo systemctl status wheelbot"
 echo ""
 echo "5. View logs:"
-echo "   tail -f logs/bot.log"
+echo "   tail -f logs/bot.log   (or: sudo journalctl -u wheelbot -f)"
 echo ""

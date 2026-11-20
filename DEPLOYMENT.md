@@ -103,9 +103,9 @@ ssh ubuntu@YOUR_PUBLIC_IP
 ### Step 2: Run Setup Script
 
 ```bash
-# Download and run setup script
-curl -O https://raw.githubusercontent.com/YOUR_USERNAME/yajscraper/main/deploy/setup.sh
-bash setup.sh
+# Clone the repository and run the setup script from it
+git clone https://github.com/love2lowball/yajscraper.git
+bash yajscraper/deploy/setup.sh
 ```
 
 Or manually:
@@ -119,7 +119,7 @@ sudo apt install -y python3 python3-pip python3-venv git
 
 # Clone repository
 cd /home/ubuntu
-git clone https://github.com/YOUR_USERNAME/yajscraper.git
+git clone https://github.com/love2lowball/yajscraper.git
 cd yajscraper
 
 # Create virtual environment

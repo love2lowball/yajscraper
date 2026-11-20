@@ -13,9 +13,8 @@ RestartSec=10
 # Environment
 Environment=PYTHONUNBUFFERED=1
 
-# Logging
-StandardOutput=append:/home/ubuntu/yajscraper/logs/bot.log
-StandardError=append:/home/ubuntu/yajscraper/logs/bot.log
+# Logging: bot.py writes logs/bot.log itself; stdout/stderr go to the
+# journal (sudo journalctl -u wheelbot) so lines are not written twice
 
 [Install]
 WantedBy=multi-user.target

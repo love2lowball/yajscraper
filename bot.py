@@ -19,6 +19,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# The log file handler below needs logs/ to exist
+os.makedirs("logs", exist_ok=True)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
